@@ -868,11 +868,22 @@ def _iter_all_paragraphs(doc: Document):
     Yield every Paragraph object covering:
       - Body paragraphs
       - Table cells (all rows, including deeply nested tables)
-      - Header & Footer paragraphs (all sections: default, even, first-page)
+      - Text boxes and Shapes (w:txbxContent)
+      - Header & Footer paragraphs (all sections)
     """
+    from docx.text.paragraph import Paragraph
+
+    # 1. Standard body paragraphs
     yield from doc.paragraphs
+    
+    # 2. Body tables
     yield from _iter_table_paragraphs(doc.tables)
 
+    # 3. Textboxes in main document body
+    for p_xml in doc.element.xpath('.//w:txbxContent//w:p'):
+        yield Paragraph(p_xml, doc._body)
+
+    # 4. Headers and footers
     for section in doc.sections:
         for hf in (
             section.header,
@@ -883,9 +894,15 @@ def _iter_all_paragraphs(doc: Document):
             section.first_page_footer,
         ):
             if hf is not None:
+                # Standard paragraphs and tables in header/footer
                 yield from hf.paragraphs
                 if hasattr(hf, "tables"):
                     yield from _iter_table_paragraphs(hf.tables)
+                
+                # Textboxes in header/footer
+                if hasattr(hf, "_element"):
+                    for p_xml in hf._element.xpath('.//w:txbxContent//w:p'):
+                        yield Paragraph(p_xml, hf)
 
 
 def _iter_table_paragraphs(tables):
