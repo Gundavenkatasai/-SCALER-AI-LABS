@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Env
+.env
+.env.*
+venv/
+.venv/
+env/
+
+# Runtime data — not committed
+temp_files/
+history.json
+*.mapping.json
+
+# Test artifacts
+test_input.docx
+test_output.docx
+api_test_input.docx
+api_test_output.docx
+dry_run_output.txt
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
