@@ -71,12 +71,19 @@ try:
 except Exception:
     try:
         import spacy
-        _nlp = spacy.load("en_core_web_sm")
+        _nlp = spacy.load("en_core_web_md")
         _SPACY_AVAILABLE = True
-        log.info("[NLP] en_core_web_lg not found, using en_core_web_sm")
+        log.info("[NLP] en_core_web_lg not found, using en_core_web_md")
     except Exception:
-        log.info("[NLP] spaCy model not available - using regex-only mode")
-        _nlp = None
+        try:
+            # Fallback for when model is installed as a direct pip package (e.g., on Vercel)
+            import en_core_web_md
+            _nlp = en_core_web_md.load()
+            _SPACY_AVAILABLE = True
+            log.info("[NLP] Loaded en_core_web_md via direct package import")
+        except Exception:
+            log.info("[NLP] spaCy model not available - using regex-only mode")
+            _nlp = None
 
 
 # =============================================================================
@@ -86,7 +93,7 @@ except Exception:
 CATEGORY_NAMES = [
     "EMAIL", "PHONE", "PERSON", "COMPANY", "ADDRESS", "RESIDENTIAL_ADDRESS",
     "CIN", "DIN", "FRN", "PEER_REV", "SEBI_REG", "PAN", "AADHAAR",
-    "IP", "DOB", "CC", "WEBSITE",
+    "IP", "DOB", "CC", "WEBSITE", "SSN"
 ]
 
 # ---------------------------------------------------------------------------
@@ -121,6 +128,7 @@ _PERSON_GAZETTEER: List[str] = [
     "Rajesh Kushal Hegde",
     "Rohit Kushal Hegde",
     "Rakhi Girija Shetty",
+    
     # Short / partial forms
     "Kushal Hegde",
     "Subbayya Hegde",
@@ -207,6 +215,7 @@ _LABEL_PREFIX: Dict[str, str] = {
     "DOB":                  "[REDACTED_DOB]",
     "CC":                   "[REDACTED_CC]",
     "WEBSITE":              "[REDACTED_WEBSITE]",
+    "SSN":                  "[REDACTED_SSN]",
 }
 
 
@@ -228,23 +237,20 @@ PATTERNS: Dict[str, re.Pattern] = {
     ),
 
     # ------------------------------------------------------------------
-    # Indian Phone Numbers  (with +91 prefix variants and bare mobiles)
+    # International Phone Numbers
     # ------------------------------------------------------------------
     "PHONE": _compile(
         r"(?:"
-        # +91 XX XXXXXXXX  (STD: 2-4 digits, local: 8 digits unsplit)
-        r"(?:\+91[\s\-]{0,2})\d{2,4}[\s\-]\d{8}"
-        # +91 XX XXXX XXXX  (STD: 2-4 digits, local: 4+4 digits)
-        r"|(?:\+91[\s\-]{0,2})\d{2,4}[\s\-]\d{4}[\s\-]\d{4}"
-        # +91 with STD in parens: +91 (020) XXXX XXXX
-        r"|(?:\+91[\s\-]{0,2})(?:\(0\d{1,4}\)|0\d{1,4})[\s\-]{0,2}\d{4}[\s\-]?\d{4}"
-        # 5+5 split: +91 XXXXX XXXXX
-        r"|(?:\+91[\s\-]{0,2})?\d{5}[\s\-]\d{5}"
-        # 10-digit mobile with +91
-        r"|(?:\+91[\s\-]{0,2})[6-9]\d{9}"
-        # Bare 10-digit mobile (6-9 prefix)
-        r"|(?<!\d)[6-9]\d{9}(?!\d)"
-        r")"
+        r"(?:\+\d{1,3}[\s\-\.]?)?\(?\d{2,4}\)?[\s\-\.]?\d{3,4}[\s\-\.]?\d{4}"
+        r"|(?:\+\d{1,3}[\s\-\.]?)?\d{5}[\s\-\.]?\d{5}"
+        r")\b"
+    ),
+
+    # ------------------------------------------------------------------
+    # SSN (Social Security Number)
+    # ------------------------------------------------------------------
+    "SSN": _compile(
+        r"\b\d{3}-\d{2}-\d{4}\b"
     ),
 
     # ------------------------------------------------------------------
@@ -335,13 +341,11 @@ PATTERNS: Dict[str, re.Pattern] = {
     # Credit Card Numbers
     # ------------------------------------------------------------------
     "CC": _compile(
-        r"\b(?:4[0-9]{12}(?:[0-9]{3})?|"
-        r"5[1-5][0-9]{14}|"
-        r"3[47][0-9]{13}|"
-        r"6(?:011|5[0-9]{2})[0-9]{12})"
-        r"\b"
+        # 16-digit cards with optional spacing (4x4)
+        r"\b(?:\d{4}[\s\-]?){3}\d{4}\b"
         r"|"
-        r"\b(?:\d{4}[\s\-]){3}\d{4}\b"
+        # 15-digit Amex with optional spacing (4-6-5)
+        r"\b3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}\b"
     ),
 
     # ------------------------------------------------------------------
@@ -513,6 +517,8 @@ class ConsistencyMapper:
                 ).strftime("%d/%m/%Y")
             elif category == "CC":
                 return "**** **** **** " + _faker.numerify("####")
+            elif category == "SSN":
+                return _faker.numerify("###-##-####")
             elif category == "COMPANY":
                 suffixes = ["Private Limited", "Limited", "LLP", "& Associates"]
                 return (_faker.last_name() + " " + _faker.last_name() + " "
@@ -614,16 +620,14 @@ def detect_pii_in_text(text: str, use_ner: bool = True) -> List[Match]:
             matches.append(Match(m.start(), m.end(), matched, "ADDRESS"))
 
     # ------------------------------------------------------------------
-    # 7. spaCy NER (optional)
+    # 7. spaCy NER (optional — improves recall but not required)
     # ------------------------------------------------------------------
     if use_ner and _SPACY_AVAILABLE and _nlp is not None:
         doc = _nlp(text)
         for ent in doc.ents:
             if ent.label_ not in ("PERSON", "ORG"):
                 continue
-            
             label_text = ent.text.strip()
-            
             if ent.label_ == "PERSON":
                 if any(skip in label_text for skip in
                        ("Trust", "Ltd", "Limited", "Inc", "Corp", "LLP",
@@ -634,14 +638,67 @@ def detect_pii_in_text(text: str, use_ner: bool = True) -> List[Match]:
                 if len(label_text.split()) < 2:
                     continue
                 matches.append(Match(ent.start_char, ent.end_char, label_text, "PERSON"))
-            
             elif ent.label_ == "ORG":
                 if _is_whitelisted(label_text):
                     continue
-                # Some generic ORG text to avoid redacting random words
                 if len(label_text) <= 2:
                     continue
                 matches.append(Match(ent.start_char, ent.end_char, label_text, "COMPANY"))
+
+    # ------------------------------------------------------------------
+    # 8. Generic PERSON name detector — ALWAYS ON, no NER needed
+    #    Matches 2-4 consecutive Title-Case words NOT on the ignore list.
+    #    Designed for table cells like "Full Name | Ramesh Kumar Verma"
+    # ------------------------------------------------------------------
+    _IGNORE_TITLE_WORDS = {
+        "Email", "Phone", "Company", "Address", "Record", "Date", "Birth",
+        "Credit", "Card", "Full", "Name", "Field", "Summary", "Notes",
+        "January", "February", "March", "April", "May", "June", "July",
+        "August", "September", "October", "November", "December",
+        "India", "USA", "United", "Kingdom", "States", "Street", "Road",
+        "Avenue", "Lane", "Apt", "Floor", "Block", "Sector", "West", "East",
+        "North", "South", "King", "Chelsea", "London", "Illinois", "Punjab",
+        "Karnataka", "Maharashtra", "West", "Bengal", "Manipur", "Ludhiana",
+        "Springfield", "Pune", "Mumbai", "Delhi", "Andheri", "Green", "Park",
+        "Maple", "Sunrise", "Apartments", "Lotus", "Enclave",
+    }
+    # Pattern: 2 to 4 consecutive Title-Case words (allows O'Connor)
+    _NAME_RE = re.compile(
+        r"\b([A-Z][a-z]+(?:[''][A-Z][a-z]+)?)"
+        r"(?:\s+([A-Z][a-z]+(?:[''][A-Z][a-z]+)?)){1,3}\b"
+    )
+    for m in _NAME_RE.finditer(text):
+        candidate = m.group().strip()
+        words = candidate.split()
+        # Skip if any word is a known non-name word
+        if any(w in _IGNORE_TITLE_WORDS for w in words):
+            continue
+        # Skip if it looks like a company (contains suffix keywords)
+        if re.search(r"\b(Ltd|Limited|Inc|Corp|LLP|LLC|Pvt|Group|Technologies|Solutions|Consulting|Analytics|Logistics|Softworks|Enterprises)\b", candidate, re.IGNORECASE):
+            continue
+        # Skip whitelisted
+        if _is_whitelisted(candidate):
+            continue
+        # Must have at least 2 words and no digit
+        if len(words) >= 2 and not re.search(r"\d", candidate):
+            matches.append(Match(m.start(), m.end(), candidate, "PERSON"))
+
+    # ------------------------------------------------------------------
+    # 9. Generic Company Suffix detector — ALWAYS ON, no NER needed
+    #    Catches any Title-Case phrase ending in a known corporate suffix.
+    # ------------------------------------------------------------------
+    _COMPANY_SUFFIX_RE = re.compile(
+        r"\b([A-Z][A-Za-z0-9&'\-]+"
+        r"(?:\s+[A-Za-z0-9&'\-]+){0,5}?\s*"
+        r"(?:Pvt\.?\s*Ltd\.?|Private\s+Limited|LLP|LLC|Inc\.?|Corp\.?|"
+        r"Corporation|Technologies|Solutions|Softworks|Enterprises|"
+        r"Consulting|Analytics|Logistics|Group|Ltd\.?))\b",
+        re.IGNORECASE,
+    )
+    for m in _COMPANY_SUFFIX_RE.finditer(text):
+        matched_str = m.group(1).strip()
+        if matched_str and matched_str[0].isupper() and not _is_whitelisted(matched_str):
+            matches.append(Match(m.start(1), m.start(1) + len(matched_str), matched_str, "COMPANY"))
 
     # ------------------------------------------------------------------
     # 8. De-duplicate & resolve overlaps (longer/earlier wins)
@@ -842,11 +899,22 @@ def _iter_all_paragraphs(doc: Document):
     Yield every Paragraph object covering:
       - Body paragraphs
       - Table cells (all rows, including deeply nested tables)
-      - Header & Footer paragraphs (all sections: default, even, first-page)
+      - Text boxes and Shapes (w:txbxContent)
+      - Header & Footer paragraphs (all sections)
     """
+    from docx.text.paragraph import Paragraph
+
+    # 1. Standard body paragraphs
     yield from doc.paragraphs
+    
+    # 2. Body tables
     yield from _iter_table_paragraphs(doc.tables)
 
+    # 3. Textboxes in main document body
+    for p_xml in doc.element.xpath('.//w:txbxContent//w:p'):
+        yield Paragraph(p_xml, doc._body)
+
+    # 4. Headers and footers
     for section in doc.sections:
         for hf in (
             section.header,
@@ -857,9 +925,15 @@ def _iter_all_paragraphs(doc: Document):
             section.first_page_footer,
         ):
             if hf is not None:
+                # Standard paragraphs and tables in header/footer
                 yield from hf.paragraphs
                 if hasattr(hf, "tables"):
                     yield from _iter_table_paragraphs(hf.tables)
+                
+                # Textboxes in header/footer
+                if hasattr(hf, "_element"):
+                    for p_xml in hf._element.xpath('.//w:txbxContent//w:p'):
+                        yield Paragraph(p_xml, hf)
 
 
 def _iter_table_paragraphs(tables):
