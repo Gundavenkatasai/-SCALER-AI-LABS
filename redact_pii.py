@@ -129,14 +129,6 @@ _PERSON_GAZETTEER: List[str] = [
     "Rohit Kushal Hegde",
     "Rakhi Girija Shetty",
     
-    # Test Data Candidates (Table formats lack context for NER)
-    "Ramesh Kumar Verma",
-    "Vamsi siva ganesh Seelam",
-    "Anjali Sharma",
-    "David O'Connor",
-    "Priya Patel",
-    "John Michael Bennett",
-    
     # Short / partial forms
     "Kushal Hegde",
     "Subbayya Hegde",
@@ -167,10 +159,6 @@ _PERSON_GAZETTEER: List[str] = [
 # COMPANY / ORG GAZETTEER — Third-party organisations named in the RHP
 # ---------------------------------------------------------------------------
 _COMPANY_GAZETTEER: List[str] = [
-    # Test Data Candidates
-    "Nimbus Softworks Pvt. Ltd.",
-    "Cipher Schools",
-
     # Statutory Auditors
     "Kirtane & Pandit LLP",
     "Kirtane and Pandit LLP",
@@ -632,16 +620,14 @@ def detect_pii_in_text(text: str, use_ner: bool = True) -> List[Match]:
             matches.append(Match(m.start(), m.end(), matched, "ADDRESS"))
 
     # ------------------------------------------------------------------
-    # 7. spaCy NER (optional)
+    # 7. spaCy NER (optional — improves recall but not required)
     # ------------------------------------------------------------------
     if use_ner and _SPACY_AVAILABLE and _nlp is not None:
         doc = _nlp(text)
         for ent in doc.ents:
             if ent.label_ not in ("PERSON", "ORG"):
                 continue
-            
             label_text = ent.text.strip()
-            
             if ent.label_ == "PERSON":
                 if any(skip in label_text for skip in
                        ("Trust", "Ltd", "Limited", "Inc", "Corp", "LLP",
@@ -652,23 +638,66 @@ def detect_pii_in_text(text: str, use_ner: bool = True) -> List[Match]:
                 if len(label_text.split()) < 2:
                     continue
                 matches.append(Match(ent.start_char, ent.end_char, label_text, "PERSON"))
-            
             elif ent.label_ == "ORG":
                 if _is_whitelisted(label_text):
                     continue
-                # Some generic ORG text to avoid redacting random words
                 if len(label_text) <= 2:
                     continue
                 matches.append(Match(ent.start_char, ent.end_char, label_text, "COMPANY"))
 
-    # Generic Company Suffix Fallback
-    # If the NER model misses a company (especially in tabular data without context),
-    # this will catch standard corporate suffixes.
-    company_suffixes = r"\b(?:Pvt\.?\s*Ltd\.?|Private\s+Limited|LLP|LLC|Inc\.?|Corp\.?|Corporation|Technologies|Solutions|Softworks|Enterprises|Group|Ltd\.?)\b"
-    for m in re.finditer(r"([A-Z][A-Za-z0-9&\'\-\s]+?" + company_suffixes + ")", text, re.IGNORECASE):
-        # Extremely naive check to ensure it at least starts with a capital letter
+    # ------------------------------------------------------------------
+    # 8. Generic PERSON name detector — ALWAYS ON, no NER needed
+    #    Matches 2-4 consecutive Title-Case words NOT on the ignore list.
+    #    Designed for table cells like "Full Name | Ramesh Kumar Verma"
+    # ------------------------------------------------------------------
+    _IGNORE_TITLE_WORDS = {
+        "Email", "Phone", "Company", "Address", "Record", "Date", "Birth",
+        "Credit", "Card", "Full", "Name", "Field", "Summary", "Notes",
+        "January", "February", "March", "April", "May", "June", "July",
+        "August", "September", "October", "November", "December",
+        "India", "USA", "United", "Kingdom", "States", "Street", "Road",
+        "Avenue", "Lane", "Apt", "Floor", "Block", "Sector", "West", "East",
+        "North", "South", "King", "Chelsea", "London", "Illinois", "Punjab",
+        "Karnataka", "Maharashtra", "West", "Bengal", "Manipur", "Ludhiana",
+        "Springfield", "Pune", "Mumbai", "Delhi", "Andheri", "Green", "Park",
+        "Maple", "Sunrise", "Apartments", "Lotus", "Enclave",
+    }
+    # Pattern: 2 to 4 consecutive Title-Case words (allows O'Connor)
+    _NAME_RE = re.compile(
+        r"\b([A-Z][a-z]+(?:[''][A-Z][a-z]+)?)"
+        r"(?:\s+([A-Z][a-z]+(?:[''][A-Z][a-z]+)?)){1,3}\b"
+    )
+    for m in _NAME_RE.finditer(text):
+        candidate = m.group().strip()
+        words = candidate.split()
+        # Skip if any word is a known non-name word
+        if any(w in _IGNORE_TITLE_WORDS for w in words):
+            continue
+        # Skip if it looks like a company (contains suffix keywords)
+        if re.search(r"\b(Ltd|Limited|Inc|Corp|LLP|LLC|Pvt|Group|Technologies|Solutions|Consulting|Analytics|Logistics|Softworks|Enterprises)\b", candidate, re.IGNORECASE):
+            continue
+        # Skip whitelisted
+        if _is_whitelisted(candidate):
+            continue
+        # Must have at least 2 words and no digit
+        if len(words) >= 2 and not re.search(r"\d", candidate):
+            matches.append(Match(m.start(), m.end(), candidate, "PERSON"))
+
+    # ------------------------------------------------------------------
+    # 9. Generic Company Suffix detector — ALWAYS ON, no NER needed
+    #    Catches any Title-Case phrase ending in a known corporate suffix.
+    # ------------------------------------------------------------------
+    _COMPANY_SUFFIX_RE = re.compile(
+        r"\b([A-Z][A-Za-z0-9&'\-]+"
+        r"(?:\s+[A-Za-z0-9&'\-]+){0,5}?\s*"
+        r"(?:Pvt\.?\s*Ltd\.?|Private\s+Limited|LLP|LLC|Inc\.?|Corp\.?|"
+        r"Corporation|Technologies|Solutions|Softworks|Enterprises|"
+        r"Consulting|Analytics|Logistics|Group|Ltd\.?))\b",
+        re.IGNORECASE,
+    )
+    for m in _COMPANY_SUFFIX_RE.finditer(text):
         matched_str = m.group(1).strip()
-        if matched_str and matched_str[0].isupper():
+        if matched_str and matched_str[0].isupper() and not _is_whitelisted(matched_str):
             matches.append(Match(m.start(1), m.start(1) + len(matched_str), matched_str, "COMPANY"))
 
     # ------------------------------------------------------------------
