@@ -75,8 +75,15 @@ except Exception:
         _SPACY_AVAILABLE = True
         log.info("[NLP] en_core_web_lg not found, using en_core_web_sm")
     except Exception:
-        log.info("[NLP] spaCy model not available - using regex-only mode")
-        _nlp = None
+        try:
+            # Fallback for when model is installed as a direct pip package (e.g., on Vercel)
+            import en_core_web_sm
+            _nlp = en_core_web_sm.load()
+            _SPACY_AVAILABLE = True
+            log.info("[NLP] Loaded en_core_web_sm via direct package import")
+        except Exception:
+            log.info("[NLP] spaCy model not available - using regex-only mode")
+            _nlp = None
 
 
 # =============================================================================
