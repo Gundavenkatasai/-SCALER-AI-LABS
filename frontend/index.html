@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Local PII redaction for Indian corporate documents. No data leaves your machine." />
+    <title>PII Redaction Engine</title>
+    <link rel="stylesheet" href="./style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div class="app">
+      
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-logo">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+          <span>Redaction Engine</span>
+        </div>
+        
+        <nav class="sidebar-nav">
+          <button class="nav-item active" data-tab="upload" id="nav-upload">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload
+          </button>
+          <button class="nav-item" data-tab="history" id="nav-history">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            History
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <p>100% local</p>
+          <p>No cloud, no leaks</p>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="content">
+        
+        <!-- Upload Tab -->
+        <div class="tab-panel active" id="panel-upload">
+          <div class="panel-header">
+            <h1>Sanitise Document</h1>
+            <p>Upload a .docx — PII is replaced with synthetic data in-place.</p>
+          </div>
+          
+          <div class="card">
+            <div class="config-row">
+              <span class="config-label">spaCy NER fallback</span>
+              <label class="toggle">
+                <input type="checkbox" id="use-ner">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+
+            <div class="dropzone" id="upload-zone">
+              <div class="dropzone-inner" id="dropzone-content">
+                <div class="drop-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </div>
+                <p class="drop-title">Drop a .docx here</p>
+                <p class="drop-sub">or click to browse &mdash; up to 50 MB</p>
+              </div>
+              <div class="dropzone-processing" id="processing-overlay">
+                <div class="spinner"></div>
+                <span>Redacting...</span>
+              </div>
+              <input type="file" id="file-input" accept=".docx" hidden />
+            </div>
+          </div>
+
+          <!-- Results (hidden until a job completes) -->
+          <div class="card results-card" id="results-section">
+            <div class="results-header">
+              <div class="success-pill">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Done
+              </div>
+              <div class="results-actions">
+                <button class="btn btn-ghost" id="download-json">JSON map</button>
+                <button class="btn btn-primary" id="download-doc">Download .docx</button>
+              </div>
+            </div>
+
+            <div class="metrics">
+              <div class="metric">
+                <span class="metric-num" id="stat-paragraphs">—</span>
+                <span class="metric-label">Blocks</span>
+              </div>
+              <div class="metric">
+                <span class="metric-num" id="stat-entities">—</span>
+                <span class="metric-label">Redacted</span>
+              </div>
+              <div class="metric">
+                <span class="metric-num" id="stat-time">—</span>
+                <span class="metric-label">Seconds</span>
+              </div>
+              <div class="metric">
+                <span class="metric-num" id="stat-ner">—</span>
+                <span class="metric-label">NER</span>
+              </div>
+            </div>
+
+            <div class="breakdown">
+              <p class="breakdown-label">Categories detected</p>
+              <div class="tags" id="breakdown-tags"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- History Tab -->
+        <div class="tab-panel" id="panel-history">
+          <div class="panel-header">
+            <h1>Job History</h1>
+            <p>Every upload is logged here. Files are kept until you delete them.</p>
+          </div>
+          <div class="card" id="history-container">
+            <div class="history-empty" id="history-empty">
+              <p>No jobs yet. Upload a document to get started.</p>
+            </div>
+            <ul class="history-list" id="history-list"></ul>
+          </div>
+        </div>
+
+      </main>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
