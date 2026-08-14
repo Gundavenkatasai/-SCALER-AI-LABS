@@ -13,13 +13,17 @@
   --danger:       #f87171;
   --danger-dim:   rgba(248, 113, 113, 0.1);
 
-  --radius:   10px;
+  --radius:    10px;
   --radius-sm: 6px;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --font: 'Inter', system-ui, sans-serif;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+}
 
 body {
   background: var(--bg);
@@ -29,26 +33,31 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- Layout ------------------------------------------------------------ */
 
 .app {
-  display: grid;
-  grid-template-columns: 220px 1fr;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
 }
 
+/* Top navigation bar */
 .sidebar {
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   display: flex;
-  flex-direction: column;
-  padding: 1.5rem 1rem;
+  align-items: center;
+  padding: 0 2rem;
+  height: 54px;
   gap: 2rem;
   position: sticky;
   top: 0;
-  height: 100vh;
+  z-index: 100;
+  flex-shrink: 0;
 }
 
 .sidebar-logo {
@@ -58,22 +67,24 @@ body {
   font-weight: 600;
   font-size: 0.9375rem;
   color: var(--text);
-  padding: 0 0.25rem;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .sidebar-logo svg { color: var(--accent); flex-shrink: 0; }
 
 .sidebar-nav {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 0.25rem;
+  flex: 1;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  padding: 0.5rem 0.75rem;
+  gap: 0.5rem;
+  padding: 0.375rem 0.875rem;
   border-radius: var(--radius-sm);
   font-size: 0.875rem;
   font-weight: 500;
@@ -81,9 +92,9 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  width: 100%;
   text-align: left;
   transition: color 0.15s var(--ease), background 0.15s var(--ease);
+  white-space: nowrap;
 }
 
 .nav-item:hover { color: var(--text); background: var(--surface-2); }
@@ -92,25 +103,36 @@ body {
 .nav-item.active svg { opacity: 1; color: var(--accent); }
 
 .sidebar-footer {
-  margin-top: auto;
-  padding: 0.5rem 0.25rem;
+  margin-left: auto;
   font-size: 0.75rem;
   color: var(--text-3);
-  line-height: 1.6;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
+/* Content fills the rest of the viewport */
 .content {
-  padding: 2.5rem 3rem;
-  max-width: 760px;
+  flex: 1;
+  padding: 2.5rem 4rem;
+  width: 100%;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 0;
 }
 
 /* ---- Tabs -------------------------------------------------------------- */
 
 .tab-panel { display: none; }
-.tab-panel.active { display: block; }
+.tab-panel.active {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
 
 .panel-header {
-  margin-bottom: 1.5rem;
+  padding-bottom: 0.5rem;
 }
 
 .panel-header h1 {
@@ -178,13 +200,25 @@ body {
 
 .dropzone {
   position: relative;
-  padding: 3.5rem 2rem;
+  padding: 5rem 2rem;
+  min-height: 260px;
   text-align: center;
   cursor: pointer;
   transition: background 0.2s var(--ease);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dropzone:hover, .dropzone.over { background: var(--surface-2); }
+
+.dropzone-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  pointer-events: none;
+}
 
 .drop-icon {
   width: 44px; height: 44px;
@@ -391,16 +425,8 @@ body {
 /* ---- Responsive -------------------------------------------------------- */
 
 @media (max-width: 680px) {
-  .app { grid-template-columns: 1fr; }
-  .sidebar {
-    position: static; height: auto;
-    flex-direction: row; align-items: center;
-    padding: 0.75rem 1rem;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
+  .sidebar { padding: 0 1rem; gap: 1rem; }
   .sidebar-footer { display: none; }
-  .sidebar-nav { flex-direction: row; }
   .content { padding: 1.5rem 1rem; }
   .metrics { grid-template-columns: repeat(2, 1fr); }
 }

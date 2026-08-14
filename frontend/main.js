@@ -1,4 +1,5 @@
-const API = 'http://localhost:8000/api';
+// Use relative URL so this works both locally (via Vite proxy) and on Vercel
+const API = '/api';
 
 // ---- Tab navigation -----------------------------------------------------
 

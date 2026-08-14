@@ -69,16 +69,14 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
-# Storage
+# Storage paths — use /tmp on Vercel (read-only filesystem in serverless),
+# fall back to local paths for development.
 # ---------------------------------------------------------------------------
-TEMP_DIR = Path("temp_files")
-TEMP_DIR.mkdir(exist_ok=True)
-
-# History is stored as a flat JSON file. No database needed — the job log
-# is small (one record per upload) and append-only writes are fine here.
-# If this ever needs querying by date range or multi-user isolation,
-# swap to SQLite with a one-table schema; the interface stays the same.
-HISTORY_FILE = Path("history.json")
+ON_VERCEL = os.environ.get("VERCEL") == "1"
+BASE_TMP   = Path("/tmp") if ON_VERCEL else Path("temp_files")
+TEMP_DIR   = BASE_TMP / "pii_temp"
+HISTORY_FILE = BASE_TMP / "history.json"
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _load_history() -> list:
