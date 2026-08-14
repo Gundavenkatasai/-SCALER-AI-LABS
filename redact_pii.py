@@ -71,16 +71,16 @@ try:
 except Exception:
     try:
         import spacy
-        _nlp = spacy.load("en_core_web_sm")
+        _nlp = spacy.load("en_core_web_md")
         _SPACY_AVAILABLE = True
-        log.info("[NLP] en_core_web_lg not found, using en_core_web_sm")
+        log.info("[NLP] en_core_web_lg not found, using en_core_web_md")
     except Exception:
         try:
             # Fallback for when model is installed as a direct pip package (e.g., on Vercel)
-            import en_core_web_sm
-            _nlp = en_core_web_sm.load()
+            import en_core_web_md
+            _nlp = en_core_web_md.load()
             _SPACY_AVAILABLE = True
-            log.info("[NLP] Loaded en_core_web_sm via direct package import")
+            log.info("[NLP] Loaded en_core_web_md via direct package import")
         except Exception:
             log.info("[NLP] spaCy model not available - using regex-only mode")
             _nlp = None
@@ -658,6 +658,16 @@ def detect_pii_in_text(text: str, use_ner: bool = True) -> List[Match]:
                 if len(label_text) <= 2:
                     continue
                 matches.append(Match(ent.start_char, ent.end_char, label_text, "COMPANY"))
+
+    # Generic Company Suffix Fallback
+    # If the NER model misses a company (especially in tabular data without context),
+    # this will catch standard corporate suffixes.
+    company_suffixes = r"\b(?:Pvt\.?\s*Ltd\.?|Private\s+Limited|LLP|Inc\.?|Corp\.?|Corporation|Technologies|Solutions|Softworks|Enterprises)\b"
+    for m in re.finditer(r"([A-Z][A-Za-z0-9&\'\-\s]+?" + company_suffixes + ")", text, re.IGNORECASE):
+        # Extremely naive check to ensure it at least starts with a capital letter
+        matched_str = m.group(1).strip()
+        if matched_str and matched_str[0].isupper():
+            matches.append(Match(m.start(1), m.start(1) + len(matched_str), matched_str, "COMPANY"))
 
     # ------------------------------------------------------------------
     # 8. De-duplicate & resolve overlaps (longer/earlier wins)
