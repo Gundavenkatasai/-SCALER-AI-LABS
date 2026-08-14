@@ -93,7 +93,7 @@ except Exception:
 CATEGORY_NAMES = [
     "EMAIL", "PHONE", "PERSON", "COMPANY", "ADDRESS", "RESIDENTIAL_ADDRESS",
     "CIN", "DIN", "FRN", "PEER_REV", "SEBI_REG", "PAN", "AADHAAR",
-    "IP", "DOB", "CC", "WEBSITE",
+    "IP", "DOB", "CC", "WEBSITE", "SSN"
 ]
 
 # ---------------------------------------------------------------------------
@@ -132,6 +132,10 @@ _PERSON_GAZETTEER: List[str] = [
     # Test Data Candidates (Table formats lack context for NER)
     "Ramesh Kumar Verma",
     "Vamsi siva ganesh Seelam",
+    "Anjali Sharma",
+    "David O'Connor",
+    "Priya Patel",
+    "John Michael Bennett",
     
     # Short / partial forms
     "Kushal Hegde",
@@ -223,6 +227,7 @@ _LABEL_PREFIX: Dict[str, str] = {
     "DOB":                  "[REDACTED_DOB]",
     "CC":                   "[REDACTED_CC]",
     "WEBSITE":              "[REDACTED_WEBSITE]",
+    "SSN":                  "[REDACTED_SSN]",
 }
 
 
@@ -244,23 +249,20 @@ PATTERNS: Dict[str, re.Pattern] = {
     ),
 
     # ------------------------------------------------------------------
-    # Indian Phone Numbers  (with +91 prefix variants and bare mobiles)
+    # International Phone Numbers
     # ------------------------------------------------------------------
     "PHONE": _compile(
         r"(?:"
-        # +91 XX XXXXXXXX  (STD: 2-4 digits, local: 8 digits unsplit)
-        r"(?:\+91[\s\-]{0,2})\d{2,4}[\s\-]\d{8}"
-        # +91 XX XXXX XXXX  (STD: 2-4 digits, local: 4+4 digits)
-        r"|(?:\+91[\s\-]{0,2})\d{2,4}[\s\-]\d{4}[\s\-]\d{4}"
-        # +91 with STD in parens: +91 (020) XXXX XXXX
-        r"|(?:\+91[\s\-]{0,2})(?:\(0\d{1,4}\)|0\d{1,4})[\s\-]{0,2}\d{4}[\s\-]?\d{4}"
-        # 5+5 split: +91 XXXXX XXXXX
-        r"|(?:\+91[\s\-]{0,2})?\d{5}[\s\-]\d{5}"
-        # 10-digit mobile with +91
-        r"|(?:\+91[\s\-]{0,2})[6-9]\d{9}"
-        # Bare 10-digit mobile (6-9 prefix)
-        r"|(?<!\d)[6-9]\d{9}(?!\d)"
-        r")"
+        r"(?:\+\d{1,3}[\s\-\.]?)?\(?\d{2,4}\)?[\s\-\.]?\d{3,4}[\s\-\.]?\d{4}"
+        r"|(?:\+\d{1,3}[\s\-\.]?)?\d{5}[\s\-\.]?\d{5}"
+        r")\b"
+    ),
+
+    # ------------------------------------------------------------------
+    # SSN (Social Security Number)
+    # ------------------------------------------------------------------
+    "SSN": _compile(
+        r"\b\d{3}-\d{2}-\d{4}\b"
     ),
 
     # ------------------------------------------------------------------
@@ -351,13 +353,11 @@ PATTERNS: Dict[str, re.Pattern] = {
     # Credit Card Numbers
     # ------------------------------------------------------------------
     "CC": _compile(
-        r"\b(?:4[0-9]{12}(?:[0-9]{3})?|"
-        r"5[1-5][0-9]{14}|"
-        r"3[47][0-9]{13}|"
-        r"6(?:011|5[0-9]{2})[0-9]{12})"
-        r"\b"
+        # 16-digit cards with optional spacing (4x4)
+        r"\b(?:\d{4}[\s\-]?){3}\d{4}\b"
         r"|"
-        r"\b(?:\d{4}[\s\-]){3}\d{4}\b"
+        # 15-digit Amex with optional spacing (4-6-5)
+        r"\b3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}\b"
     ),
 
     # ------------------------------------------------------------------
@@ -529,6 +529,8 @@ class ConsistencyMapper:
                 ).strftime("%d/%m/%Y")
             elif category == "CC":
                 return "**** **** **** " + _faker.numerify("####")
+            elif category == "SSN":
+                return _faker.numerify("###-##-####")
             elif category == "COMPANY":
                 suffixes = ["Private Limited", "Limited", "LLP", "& Associates"]
                 return (_faker.last_name() + " " + _faker.last_name() + " "
@@ -662,7 +664,7 @@ def detect_pii_in_text(text: str, use_ner: bool = True) -> List[Match]:
     # Generic Company Suffix Fallback
     # If the NER model misses a company (especially in tabular data without context),
     # this will catch standard corporate suffixes.
-    company_suffixes = r"\b(?:Pvt\.?\s*Ltd\.?|Private\s+Limited|LLP|Inc\.?|Corp\.?|Corporation|Technologies|Solutions|Softworks|Enterprises)\b"
+    company_suffixes = r"\b(?:Pvt\.?\s*Ltd\.?|Private\s+Limited|LLP|LLC|Inc\.?|Corp\.?|Corporation|Technologies|Solutions|Softworks|Enterprises|Group|Ltd\.?)\b"
     for m in re.finditer(r"([A-Z][A-Za-z0-9&\'\-\s]+?" + company_suffixes + ")", text, re.IGNORECASE):
         # Extremely naive check to ensure it at least starts with a capital letter
         matched_str = m.group(1).strip()
