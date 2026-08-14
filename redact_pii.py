@@ -675,73 +675,89 @@ def _apply_replacements_to_runs(
     paragraph, replacements: List[Tuple[int, int, str]]
 ) -> None:
     """
-    Core split-run redaction — preserves all w:rPr formatting.
-
-    Algorithm:
-    1. Build virtual_text = concat of all run.text values.
-    2. Build cumulative offset table mapping run index → char start position.
-    3. For each replacement (right-to-left to preserve earlier offsets):
-       a. Single-run span: replace text slice in-place.
-       b. Multi-run span: set first run = prefix + replacement,
-                          clear intermediate runs,
-                          set last run = suffix only.
+    Core split-node redaction — preserves all doc structure (tabs, images, runs).
+    Directly modifies w:t elements instead of calling run.text which destroys non-text nodes.
     """
     if not replacements:
         return
 
+    # Extract all text-bearing XML nodes from all runs in the paragraph.
+    nodes = []
     runs = _get_all_runs(paragraph)
-    if not runs:
-        return
-
-    # Build cumulative offsets
-    offsets: List[int] = []
-    pos = 0
     for run in runs:
-        offsets.append(pos)
-        pos += len(run.text or "")
-    offsets.append(pos)  # sentinel
+        for child in run._element:
+            if child.tag == qn('w:t'):
+                nodes.append([child, child.text or ""])
+            elif child.tag == qn('w:tab'):
+                nodes.append([child, "\t"])
+            elif child.tag in (qn('w:br'), qn('w:cr')):
+                nodes.append([child, "\n"])
+
+    if not nodes:
+        return
 
     # Apply right-to-left to preserve earlier offsets
     for (rep_start, rep_end, replacement) in sorted(replacements, key=lambda x: -x[0]):
-        first_run_idx = None
-        last_run_idx = None
-        for i, run in enumerate(runs):
+        # Rebuild offsets because previous loops may have changed node string values
+        offsets: List[int] = []
+        pos = 0
+        for node, val in nodes:
+            offsets.append(pos)
+            pos += len(val)
+        offsets.append(pos)
+
+        first_idx = None
+        last_idx = None
+        for i, (node, val) in enumerate(nodes):
             r_start = offsets[i]
             r_end = offsets[i + 1]
             if r_end <= rep_start:
                 continue
             if r_start >= rep_end:
                 break
-            if first_run_idx is None:
-                first_run_idx = i
-            last_run_idx = i
+            if first_idx is None:
+                first_idx = i
+            last_idx = i
 
-        if first_run_idx is None:
+        if first_idx is None:
             continue
 
-        first_run = runs[first_run_idx]
-        first_r_start = offsets[first_run_idx]
-        prefix = (first_run.text or "")[: rep_start - first_r_start]
+        first_node, first_val = nodes[first_idx]
+        first_start = offsets[first_idx]
+        prefix = first_val[: rep_start - first_start]
 
-        if first_run_idx == last_run_idx:
-            last_r_start = offsets[last_run_idx]
-            suffix = (first_run.text or "")[rep_end - last_r_start:]
-            first_run.text = prefix + replacement + suffix
-        else:
-            last_run = runs[last_run_idx]
-            last_r_start = offsets[last_run_idx]
-            suffix = (last_run.text or "")[rep_end - last_r_start:]
-            first_run.text = prefix + replacement
-            for mid_idx in range(first_run_idx + 1, last_run_idx + 1):
-                runs[mid_idx].text = ""
-            last_run.text = suffix
+        last_node, last_val = nodes[last_idx]
+        last_start = offsets[last_idx]
+        suffix = last_val[rep_end - last_start :]
 
-        # Recalculate offsets after each modification
-        pos = 0
-        for i, run in enumerate(runs):
-            offsets[i] = pos
-            pos += len(run.text or "")
-        offsets[len(runs)] = pos
+        target_idx = None
+        for i in range(first_idx, last_idx + 1):
+            if nodes[i][0].tag == qn('w:t'):
+                target_idx = i
+                break
+        
+        if target_idx is None:
+            # Fallback: create a w:t node just before the first node
+            from docx.oxml import OxmlElement
+            new_wt = OxmlElement('w:t')
+            nodes[first_idx][0].addprevious(new_wt)
+            nodes.insert(first_idx, [new_wt, ""])
+            target_idx = first_idx
+            last_idx += 1
+
+        for i in range(first_idx, last_idx + 1):
+            if i == target_idx:
+                new_text = prefix + replacement + suffix
+                nodes[i][0].text = new_text
+                nodes[i][1] = new_text
+            elif nodes[i][0].tag == qn('w:t'):
+                nodes[i][0].text = ""
+                nodes[i][1] = ""
+            else:
+                parent = nodes[i][0].getparent()
+                if parent is not None:
+                    parent.remove(nodes[i][0])
+                nodes[i][1] = ""
 
 
 def redact_paragraph(
