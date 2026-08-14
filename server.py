@@ -121,7 +121,7 @@ async def health():
 async def redact(
     request: Request,
     file: UploadFile = File(...),
-    use_ner: bool = Form(False),
+    use_ner: bool = Form(True),
 ):
     # Validate file type before writing anything to disk.
     # Don't trust the Content-Type header alone — check the extension too.

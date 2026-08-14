@@ -619,18 +619,29 @@ def detect_pii_in_text(text: str, use_ner: bool = True) -> List[Match]:
     if use_ner and _SPACY_AVAILABLE and _nlp is not None:
         doc = _nlp(text)
         for ent in doc.ents:
-            if ent.label_ not in ("PERSON",):
+            if ent.label_ not in ("PERSON", "ORG"):
                 continue
+            
             label_text = ent.text.strip()
-            if any(skip in label_text for skip in
-                   ("Trust", "Ltd", "Limited", "Inc", "Corp", "LLP",
-                    "HUF", "Foundation", "Association")):
-                continue
-            if _is_whitelisted(label_text):
-                continue
-            if len(label_text.split()) < 2:
-                continue
-            matches.append(Match(ent.start_char, ent.end_char, label_text, "PERSON"))
+            
+            if ent.label_ == "PERSON":
+                if any(skip in label_text for skip in
+                       ("Trust", "Ltd", "Limited", "Inc", "Corp", "LLP",
+                        "HUF", "Foundation", "Association")):
+                    continue
+                if _is_whitelisted(label_text):
+                    continue
+                if len(label_text.split()) < 2:
+                    continue
+                matches.append(Match(ent.start_char, ent.end_char, label_text, "PERSON"))
+            
+            elif ent.label_ == "ORG":
+                if _is_whitelisted(label_text):
+                    continue
+                # Some generic ORG text to avoid redacting random words
+                if len(label_text) <= 2:
+                    continue
+                matches.append(Match(ent.start_char, ent.end_char, label_text, "COMPANY"))
 
     # ------------------------------------------------------------------
     # 8. De-duplicate & resolve overlaps (longer/earlier wins)
