@@ -470,7 +470,8 @@ class ConsistencyMapper:
             if category == "EMAIL":
                 return _faker.email()
             elif category == "PHONE":
-                return f"+91-{_faker.numerify('##### #####')}"
+                # Do NOT use a space in the phone number to prevent word-wrap layout shifts
+                return f"+91-{_faker.numerify('##########')}"
             elif category == "PERSON":
                 return _faker.name()
             elif category in ("ADDRESS", "RESIDENTIAL_ADDRESS"):
@@ -517,7 +518,8 @@ class ConsistencyMapper:
                 return (_faker.last_name() + " " + _faker.last_name() + " "
                         + _faker.random_element(suffixes))
             elif category == "WEBSITE":
-                return "www." + _faker.domain_name()
+                prefix = "https://" if "https://" in real_text.lower() else ("http://" if "http://" in real_text.lower() else "")
+                return f"{prefix}www.{_faker.domain_name()}"
             else:
                 return label
         except Exception:
@@ -812,7 +814,7 @@ def redact_paragraph(
                             new_target = target
                             # Replace right-to-left
                             for m in sorted(hl_matches, key=lambda x: -x.start):
-                                fake_val = mapper.get_mapping(m.category, m.text)
+                                fake_val = mapper.get_or_create(m.category, m.text)
                                 if fake_val:
                                     new_target = new_target[:m.start] + fake_val + new_target[m.end:]
                             rel._target = new_target
